@@ -1,0 +1,8 @@
+{
+  "upload_url": "https://ads.tiktok.com/mi/api/v2/i18n/material/image/upload/?aadvid=...&req_src=ad_creation&msToken=...&X-Bogus=...&X-Gnarly=...",
+  "cookie": "paste the complete Cookie request header here",
+  "csrf_token": "paste csrftoken here",
+  "referer": "https://ads.tiktok.com/i18n/nb_creation/create/ad-detail?aadvid=...",
+  "origin": "https://ads.tiktok.com",
+  "user_agent": "Mozilla/5.0 ..."
+}
