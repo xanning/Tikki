@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"regexp"
 	"syscall"
 	"time"
 )
@@ -23,18 +24,28 @@ type Server struct {
 
 func main() {
 	address := flag.String("addr", "127.0.0.1:8787", "listen address")
-	sessionPath := flag.String("session", "session.json", "session file")
+	sessionPath := flag.String("session", "session.txt", "session file (raw HTTP request dump or legacy JSON)")
+	concurrency := flag.Int("concurrency", 8, "concurrent segment uploads")
 	flag.Parse()
 	if err := initPolyglot(); err != nil {
 		log.Fatal(err)
 	}
+	if err := os.MkdirAll(playlistStorageDir, 0755); err != nil {
+		log.Fatalf("failed to create playlist storage dir: %v", err)
+	}
+	if err := os.MkdirAll("/var/log/tikki", 0755); err != nil {
+		log.Fatalf("failed to create log dir: %v", err)
+	}
 	uploader := newTikTokClient(*sessionPath)
-	app := &Server{uploader: uploader, mirror: newMirrorService(uploader)}
+	app := &Server{uploader: uploader, mirror: newMirrorService(uploader, *concurrency)}
+	app.mirror.BaseURL = "http://" + *address
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", app.index)
 	mux.HandleFunc("GET /health", app.health)
 	mux.HandleFunc("POST /upload/segment/", app.uploadSegment)
-	mux.HandleFunc("POST /mirror/run", app.runMirror)
+	mux.HandleFunc("POST /submit/mirror", app.submitMirror)
+	mux.HandleFunc("GET /status/{jobID}", app.getStatus)
+	mux.HandleFunc("GET /playlists/{jobID}/{file}", app.servePlaylist)
 	server := &http.Server{
 		Addr:              *address,
 		Handler:           requestLog(mux),
@@ -62,7 +73,7 @@ func (s *Server) index(w http.ResponseWriter, _ *http.Request) {
 		"name":       "Tikki",
 		"status":     "ready",
 		"png_offset": len(canvasHeader),
-		"endpoints":  []string{"POST /upload/segment/", "POST /mirror/run", "GET /health"},
+		"endpoints":  []string{"POST /submit/mirror", "GET /status/{jobID}", "POST /upload/segment/", "GET /health"},
 	})
 }
 
@@ -95,22 +106,55 @@ func (s *Server) uploadSegment(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
-func (s *Server) runMirror(w http.ResponseWriter, r *http.Request) {
+func (s *Server) submitMirror(w http.ResponseWriter, r *http.Request) {
 	request, err := decodeMirrorRequest(r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	result, err := s.mirror.Run(r.Context(), request)
+	jobID, err := s.mirror.Submit(r.Context(), request)
 	if err != nil {
-		status := http.StatusBadGateway
-		if err.Error() == "a mirror job is already running" {
-			status = http.StatusConflict
-		}
-		writeError(w, status, err.Error())
+		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, result)
+	writeJSON(w, http.StatusAccepted, map[string]string{"job_id": jobID})
+}
+
+var jobIDPattern = regexp.MustCompile(`^[0-9]+$`)
+var allowedPlaylistFiles = map[string]bool{"master.m3u8": true, "video.m3u8": true, "audio.m3u8": true}
+
+func (s *Server) servePlaylist(w http.ResponseWriter, r *http.Request) {
+	jobID := r.PathValue("jobID")
+	file := r.PathValue("file")
+	if !jobIDPattern.MatchString(jobID) || !allowedPlaylistFiles[file] {
+		writeError(w, http.StatusBadRequest, "invalid playlist path")
+		return
+	}
+	path := playlistStorageDir + "/" + jobID + "/" + file
+	data, err := os.ReadFile(path)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "playlist not found")
+		return
+	}
+	w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
+}
+
+func (s *Server) getStatus(w http.ResponseWriter, r *http.Request) {
+	jobID := r.PathValue("jobID")
+	if jobID == "" {
+		writeError(w, http.StatusBadRequest, "missing job_id parameter")
+		return
+	}
+	job := s.mirror.GetStatus(jobID)
+	if job == nil {
+		writeError(w, http.StatusNotFound, "job not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, job)
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {

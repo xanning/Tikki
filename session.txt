@@ -1,0 +1,19 @@
+POST /mi/api/v2/i18n/material/image/upload/?aadvid=....&req_src=tt4b_creation&is_compressed=0&msToken=FR6....O HTTP/2
+Host: ads.tiktok.com
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36
+Accept: application/json, text/plain, */*
+Accept-Language: en-US,en;q=0.9
+Accept-Encoding: gzip, deflate, br, zstd
+Content-Type: multipart/form-data; boundary=----geckoformboundarydb38ff4da82a4251f1df684f9a991451
+Content-Length: 160494
+Referer: https://ads.tiktok.com/i18n/creative-library/dashboard?aadvid=7...
+X-CSRFToken: E202BUB....
+Origin: https://ads.tiktok.com
+Sec-Fetch-Dest: empty
+Sec-Fetch-Mode: cors
+Sec-Fetch-Site: same-origin
+Connection: keep-alive
+Cookie: ttam-target-idc=alisg; ttwid=1%7CoFOveeH49QjlSH01Rk....
+Pragma: no-cache
+Cache-Control: no-cache
+TE: trailers
